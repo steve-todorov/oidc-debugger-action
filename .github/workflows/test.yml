@@ -1,0 +1,25 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request: ~
+  schedule:
+    - cron: '0 13 * * 1'
+
+permissions:
+  id-token: write
+
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./
+        with:
+          audience: '${{ github.server_url }}/${{ github.repository }}'
+
+      - uses: ./
