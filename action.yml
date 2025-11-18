@@ -13,6 +13,28 @@ runs:
       env:
         AUDIENCE: "${{ inputs.audience }}"
       run: |
-        TOKEN_JSON=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE")
-        ID_TOKEN=$(echo "$TOKEN_JSON" | jq -r .value)
-        echo "$ID_TOKEN" | awk -F. '{print $2}' | base64 -d 2>/dev/null | jq -r
+        # Debug OIDC claims
+        set -euo pipefail
+        response=$(curl -s -w "\n%{http_code}" \
+          -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}")
+        
+        body="${response%$'\n'*}"
+        status="${response##*$'\n'}"
+        
+        if [ "$status" != "200" ]; then
+          echo "Unexpected status: $status"
+          echo "$body"
+          exit 1
+        fi
+        
+        TOKEN_JSON="$body"
+        ID_TOKEN=$(echo "$TOKEN_JSON" | jq -r '.value')
+        # GH returns the base64 encoded token in base64url safe format which causes `base64 -d` to fail sometimes (but still print the payload)
+        echo "$ID_TOKEN" \
+          | jq -R 'split(".")[1]        # take payload segment
+                   | gsub("-"; "+")     # base64url -> base64
+                   | gsub("_"; "/")
+                   | . + "==="          # add padding
+                   | @base64d           # decode
+                   | fromjson'          # parse JSON
